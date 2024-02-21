@@ -1,8 +1,0 @@
-# ninja log v5
-1	931	1706558422332387544	CMakeFiles/helper.dir/src/helper.cpp.o	430df34d6c3a56dd
-932	946	1706558422348387390	libhelper.a	6c5a10a9a79cc8f7
-1	1230	1706558422632384658	CMakeFiles/main.dir/src/main.cpp.o	617d6d2fc6f4623a
-1	3588	1706558424984362033	CMakeFiles/kernel_functions.dir/src/kernel_functions.cu.o	9207c5e77df0064
-3588	3603	1706558425008361802	libkernel_functions.a	df4b55ab27e476a9
-3603	3668	1706558425072361186	CMakeFiles/main.dir/cmake_device_link.o	41b93a7b186ba523
-3668	3816	1706558425216359801	main	57ccf8863ee6908e
