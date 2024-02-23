@@ -11,7 +11,7 @@ detector geometry:
     [4, 7, 15.5, 17.5, 0, 1, 7, 10],
     [4, 7, 21.5, 23.5, 0, 1, 8, 10],
     [7, 10, 0.5, 2.5, 0, 1, 9, 10],
-    [7, 10, 6.5, 8.5, 0, 1, 10, 10],
+    [7, 10, 6.5, 10.5, 0, 1, 10, 10],
     [7, 10, 12.5, 14.5, 0, 1, 11, 10],
     [7, 10, 18.5, 20.5, 0, 1, 12, 10],
     [10, 13, 0.5, 2.5, 0, 1, 13, 10],
@@ -25,19 +25,18 @@ detector geometry:
     [0, 15, 24.0, 24.5, 0, 1, 21, 10],
   ]
 detector:
-  crystal n subdivision x,y,z: [4, 4, 1]
-  inner layer x up-lim: 6.5
-  detector y-dimension: 8
+  crystal n subdivision xyz: [4, 4, 1]
+  sensitive geometry indices:
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  inner layer x up-lim: 8
+image:
+  dimension xyz: [1.0, 1.0, 1.0]
+  voxel per mm xyz: [1.0, 1.0, 1.0]
+  subdivision xyz: [2, 2, 2]
+  detector y-dimension: 9
   detector x-shift: 50
   detector rotation: 0
-image:
-  x dimension: 100
-  y dimension: 100
-  z dimension: 1
-  pixel per mm x: 2
-  pixel per mm y: 2
-  pixel per mm z: 1
 
 Debug:
-  Point A: [-10, -1.5, 0.5]
-  Point B: [10, 1.2, 0.5]
+  Point A: [-40, -12.5, 0.5]
+  Point B: [11.5, 13.5, 0.5]

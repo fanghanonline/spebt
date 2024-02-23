@@ -154,31 +154,46 @@ __device__ void pointB_device(float *pointB, unsigned int index, subdivs_config 
   unsigned int id_xy = index % (config_shared->det_N_sub_xyz[0] * config_shared->det_N_sub_xyz[1]);
   unsigned int id_y = id_xy / config_shared->det_N_sub_xyz[1];
   unsigned int id_x = id_xy % config_shared->det_N_sub_xyz[1];
-  float dim_subdiv_x = (target_share[1] - target_share[0]) / config_shared->det_N_sub_xyz[0];
-  float dim_subdiv_y = (target_share[3] - target_share[2]) / config_shared->det_N_sub_xyz[1];
-  float dim_subdiv_z = (target_share[5] - target_share[4]) / config_shared->det_N_sub_xyz[2];
+  float dim_subdiv_x = (target_share[1] - target_share[0]) / (float)config_shared->det_N_sub_xyz[0];
+  float dim_subdiv_y = (target_share[3] - target_share[2]) / (float)config_shared->det_N_sub_xyz[1];
+  float dim_subdiv_z = (target_share[5] - target_share[4]) / (float)config_shared->det_N_sub_xyz[2];
   pointB[0] = (0.5 + id_x) * dim_subdiv_x;
   pointB[1] = (0.5 + id_y) * dim_subdiv_y;
   pointB[2] = (0.5 + id_z) * dim_subdiv_z;
-  // printf("Device: %d,%d,%d  %f, %f,%f\n", id_img_x, id_img_y, id_img_z, pointA[0], pointA[1], pointA[2]);
+  // printf("Device: %d,%d,%d  %f, %f, %f PointB: (%f, %f, %f)\n", id_x, id_y, id_z, target_share[1] - target_share[0], target_share[3] - target_share[2], target_share[5] - target_share[4], pointB[0], pointB[1], pointB[2]);
 }
 
-__global__ void get_pointA_kernel(float *d_objects,
+__global__ void get_length_kernel(float *d_objects,
                                   subdivs_config *d_config,
                                   unsigned int N_img,
                                   unsigned int N_det,
+                                  unsigned int N_objects,
                                   float *d_result)
 {
   unsigned int tidx = threadIdx.x + blockIdx.x * blockDim.x;
   unsigned int tidy = threadIdx.y + blockIdx.y * blockDim.y;
   if (tidy < N_det and tidx < N_img)
   {
-    float pointA[3];
+    unsigned int det_N_subs = d_config->det_N_sub_xyz[0] * d_config->det_N_sub_xyz[1] * d_config->det_N_sub_xyz[2];
+    unsigned int target_index = tidy / det_N_subs;
+    unsigned int subdiv_index = tidy % det_N_subs;
+    float pointA[3], pointB[3], *target_share;
     pointA_device(pointA, tidx, d_config);
-    d_result[tidx * 3] = pointA[0];
-    d_result[tidx * 3 + 1] = pointA[1];
-    d_result[tidx * 3 + 2] = pointA[2];
-    // printf("Device: %d  %f, %f,%f\n", tidx, pointA[0], pointA[1], pointA[2]);
+    target_share = &d_objects[target_index * 8];
+    pointB_device(pointB, subdiv_index, d_config, target_share);
+    // for (size_t i : {0, 1, 2})
+    // {
+    //   d_result[tidy * 3 + i] = pointB[i];
+    // }
+
+    for (unsigned int i = 0; i < N_objects; i++)
+    {
+      float *object;
+      object = d_objects + i * 8;
+      d_result[tidy * N_img + tidx] += intersection_length_device(object, pointA, pointB);
+    }
+
+    // printf("Device: ThreadID: (%d, %d) PointB: (%f, %f, %f)\n", tidx, tidy, pointB[0], pointB[1], pointB[2]);
   }
 }
 
@@ -190,7 +205,7 @@ void set_config_array(YAML::Node config, subdivs_config *h_config)
   const std::vector<int> det_subdivs = config["detector"]["crystal n subdivision xyz"].as<std::vector<int>>();
   for (int i : {0, 1, 2})
   {
-    // Image N subvoxels x,y,z:
+    // Image N subvoxels x,y,z: 
     h_config->img_N_sub_xyz[i] = ceil(img_dims[i] * img_vpmms[i] * img_subdivs[i]);
     // Image subvoxel dimension x,y,z
     h_config->img_dims_sub_xyz[i] = 1.0 / img_vpmms[i] / img_subdivs[i];
@@ -216,9 +231,9 @@ void get_result_host(YAML::Node config)
   }
   printf("Image N subvoxels: %lu\n", N_size_img);
   std::vector<size_t> sensGeomIndex = config["detector"]["sensitive geometry indices"].as<std::vector<size_t>>();
-  size_t n_objects = sensGeomIndex.size();
-  float *h_objects = (float *)malloc(n_objects * sizeof(float) * 8);
-  for (size_t i = 0; i < n_objects; i++)
+  size_t N_objects = sensGeomIndex.size();
+  float *h_objects = (float *)malloc(N_objects * sizeof(float) * 8);
+  for (size_t i = 0; i < N_objects; i++)
   {
     auto geomObj = geomDefinition[sensGeomIndex[i]];
     size_t index = geomObj[6];
@@ -227,19 +242,20 @@ void get_result_host(YAML::Node config)
       h_objects[i * 8 + j] = geomObj[j];
     }
   }
-  float *h_result = (float *)malloc(N_size_img * sizeof(float) * 3);
+
   float *d_objects, *d_result;
   cudaMalloc((void **)&d_config, sizeof(subdivs_config));
-  cudaMalloc((void **)&d_result, N_size_img * sizeof(float) * 3);
-  cudaMalloc((void **)&d_objects, n_objects * sizeof(float) * 8);
+  // cudaMalloc((void **)&d_result, N_size_img * sizeof(float) * 3);
+
+  cudaMalloc((void **)&d_objects, N_objects * sizeof(float) * 8);
   cudaMemcpy(d_config, &h_config, sizeof(subdivs_config),
              cudaMemcpyHostToDevice);
 
   // std::cout << "LINE: " << __LINE__ << "\n";
   // cudaMalloc((void **)&d_pointA, 3 * sizeof(float));
   // cudaMalloc((void **)&d_pointB, 3 * sizeof(float));
-  // cudaMemcpy(d_objects, h_objects, n_objects * sizeof(float) * 8,
-  //            cudaMemcpyHostToDevice);
+  cudaMemcpy(d_objects, h_objects, N_objects * sizeof(float) * 8,
+             cudaMemcpyHostToDevice);
   // cudaMemcpy(d_pointA, pointA.data(), 3 * sizeof(float),
   //            cudaMemcpyHostToDevice);
   // cudaMemcpy(d_pointB, pointB.data(), 3 * sizeof(float),
@@ -247,15 +263,24 @@ void get_result_host(YAML::Node config)
 
   // get_intersection_length_kernel<<<(n_objects + 255) / 256, 256>>>(
   //     d_objects, d_pointA, d_pointB, n_objects, d_result);
-  unsigned int N_det = 10;
-  dim3 dimBlock(1024, 1);
-  dim3 dimGrid(N_size_img + 1023 / N_size_img, 1);
-  get_pointA_kernel<<<dimGrid, dimBlock>>>(d_objects, d_config, N_size_img, N_det, d_result);
-  cudaMemcpy(h_result, d_result, N_size_img * sizeof(float) * 3,
+  unsigned int N_det = 21 * h_config.det_N_sub_xyz[0] * h_config.det_N_sub_xyz[1] * h_config.det_N_sub_xyz[2];
+  unsigned int result_size = N_det * N_size_img * sizeof(float);
+
+  float *h_result = (float *)malloc(result_size);
+  cudaMalloc((void **)&d_result, result_size);
+  dim3 dimBlock(32, 32);
+  dim3 dimGrid((N_size_img + 31) / 32, (N_det + 31) / 32);
+  get_length_kernel<<<dimGrid, dimBlock>>>(d_objects, d_config, N_size_img, N_det,
+                                           N_objects, d_result);
+  cudaMemcpy(h_result, d_result, result_size,
              cudaMemcpyDeviceToHost);
-  for (size_t i = 0; i < N_size_img; i++)
+  for (size_t i = 0; i < N_det; i++)
   {
-    printf("(%f, %f, %f)\n", h_result[i * 3], h_result[i * 3 + 1], h_result[i * 3 + 2]);
+    for (size_t j = 0; j < N_size_img; j++)
+    {
+      printf("%f, ", h_result[i * N_size_img + j]);
+    }
+    std::cout << "\n";
   }
   // for (auto object : geomDefinition)
   // {
